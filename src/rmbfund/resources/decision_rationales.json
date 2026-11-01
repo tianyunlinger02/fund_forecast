@@ -1,0 +1,171 @@
+[
+  {
+    "schema_version": 1,
+    "id": "018147-direct-operation-advice-20261029",
+    "product_id": "open_fund:018147:C",
+    "research_record_id": "76f2ab0675ca7ef62baa2aa858b5a0678d327104547646a2261b8e3f5b27a1c9",
+    "generated_at": "2026-10-29T16:18:48.948976+00:00",
+    "origin": {
+      "provider": "interactive_assistant",
+      "model": "当前会话助手",
+      "human_reviewed": false,
+      "basis": "对2026-10-28原研究作单一操作裁决；所选窗口内不合算的新增交易不再用长期产业观点覆盖；没有重新取材、生成概率或改写原证据日期"
+    },
+    "fact_refs": ["f_cash", "f_cost", "f_futures", "f_manager", "f_nv", "f_nv_plan", "f_peer", "f_policy", "f_portfolio", "f_price", "f_sk", "f_ts"],
+    "comparison_evidence_refs": [
+      {
+        "kind": "historical_reconstruction",
+        "source_path": "runs/artifacts/calendar-trade-20261029/browser/final-browser-summary.json",
+        "locator": "historical_test03",
+        "scope": "净值模型H5/L3，统一费用与批次年龄，791可核对、159不重叠窗口；不是独立样本或自然日实盘",
+        "finding": "新买/等待的模型单窗口平均盈亏-3.61元，简单对照+12.09元；持有/退出+36.63元，对照+72.40元。这批没有体现模型择时优势，不外推成所有期限都无用。",
+        "genuine_same_h_forward_windows": 0
+      }
+    ],
+    "scope": {
+      "window_semantics": "review_not_forced_exit",
+      "model_families": ["nav_ridge_empirical", "exposure_factor_ridge_empirical_v1"],
+      "conflicts": ["aligned", "opposed", "unavailable"],
+      "capital_task": "按所选天数和费用，决定这只AI产业基金当前是否新买、持有、追加或退出",
+      "limits": [
+        "这是对所绑定研究的经济取舍，不新增下一天或所选N天的基本面上涨概率。",
+        "净值模型没有把本次回款、指引、订单与政策正文直接拟合进概率；因素试验也不能被称为完整经济模型。",
+        "所选天数决定本次操作建议使用的费用后比较，不强制到期清仓。产业经营是研究依据，不能用它覆盖这段买卖不合算的新增交易。近期净值模型未证明择时优势，因此不凭这次窗口声称最佳买卖日。",
+        "这是一份按所选窗口和费用作出的作者操作裁决，不是对所有基金套同一均值排名。实际新研究、经营反方和明确资金条件可以改变它，不承诺始终买入。"
+      ]
+    },
+    "cases": {
+      "new_buy": {
+        "action": "buy",
+        "reason": "原研究对AI芯片、先进制程和存储的产业判断偏正面：已实现销售与长期订单支持未来盈利。这构成候选买入的经营依据，不直接等于本次所选天数内应新买；当前操作由费用后比较与下方裁决确定。",
+        "fact_ids": ["f_nv", "f_nv_plan", "f_ts", "f_sk", "f_cash", "f_price"],
+        "why_not": [
+          {
+            "action": "wait",
+            "reason": "留现金避开科技回撤与往返费用，也会放弃已在兑现的产业盈利敞口。现金回收和存储周期仍是关键反方；是否值得为参与这段机会付费，应服从本次所选期限的操作裁决。",
+            "fact_ids": ["f_cash", "f_nv", "f_nv_plan", "f_sk", "f_ts"]
+          }
+        ],
+        "short_window_resolution": {
+          "aligned": {
+            "reason": "经营与订单仍有支撑，所选这段时间扣除买卖费用后也有预期盈利空间。",
+            "fact_ids": ["f_nv", "f_nv_plan", "f_sk", "f_cash"],
+            "operation_advice": {
+              "action": "buy",
+              "reason": "经营与订单仍有支撑，所选这段时间扣除买卖费用后也有预期盈利空间。",
+              "next_step": "按所选日期复核；如果回款或订单明显转弱，提前重新考虑卖出。"
+            }
+          },
+          "opposed": {
+            "reason": "所选这段时间，扣除买卖费用后的预期结果不如留现金，不值得为了短线参与而新买。",
+            "fact_ids": ["f_cash", "f_nv", "f_nv_plan", "f_sk", "f_ts"],
+            "operation_advice": {
+              "action": "wait",
+              "reason": "所选这段时间，扣除买卖费用后的预期结果不如留现金，不值得为了短线参与而新买。",
+              "next_step": "等费用下降或价格变化，让这段交易的费用后预期收益转正，再考虑买入。"
+            }
+          },
+          "unavailable": {
+            "reason": "还没算出所选这段时间买入再卖出的准确净额，这次先不新买。",
+            "fact_ids": ["f_nv", "f_nv_plan", "f_sk", "f_cost"],
+            "operation_advice": {
+              "action": "wait",
+              "reason": "还没算出所选这段时间买入再卖出的准确净额，这次先不新买。",
+              "next_step": "补算对应期限；若新份额确认来不及，就调整买卖日期后再看。"
+            }
+          }
+        },
+        "checks": [
+          {"condition": "下一份实际业绩和经营指引是否显示AI服务器、先进制程收入或订单转弱", "effect": "若实际经营与后续指引共同转弱，停止沿用这项新增理由，重新比较现金和基金", "fact_ids": ["f_nv", "f_nv_plan", "f_ts", "f_sk"]},
+          {"condition": "NVDA收入增长是否仍主要沉淀为应收、存货占款，经营现金是否继续跟上", "effect": "若现金兑现持续恶化，削弱新增理由，不用表面利润倍数继续证明价格合适", "fact_ids": ["f_cash", "f_price"]},
+          {"condition": "出口许可是否出现针对主要交付的真实拒绝或收入调整", "effect": "按受影响订单和基金敞口重估，而非看到政策标题就统一减收益", "fact_ids": ["f_policy", "f_nv_plan", "f_portfolio"]}
+        ]
+      },
+      "held": {
+        "action": "hold",
+        "reason": "已有份额的首选是保留产业敞口，不为了等回本，也不因一个短窗口偏弱就退出。现在清仓会失去仍由销售、经营现金和订单支撑的参与机会；现有反方更支持紧盯回款和周期，而不足以认定现金已经更优。是否再加一笔另外看新增理由。",
+        "fact_ids": ["f_cash", "f_nv", "f_nv_plan", "f_ts", "f_sk", "f_manager"],
+        "why_not": [
+          {"action": "exit", "reason": "现在退出能确定停止承受后续净值波动，但会放弃仍成立的经营敞口，也可能付当前赎回费。Q3跑输是实际代价，不能单独推断以后也该卖；最强卖出理由应是需求、回款或策略任务被推翻，而不是已经跌了多少。", "fact_ids": ["f_cash", "f_manager", "f_nv", "f_nv_plan"]},
+          {"action": "reduce50", "reason": "减一半确实减少波动，也同时减少上涨参与；目前没有个人资金约束或经营事实证明50%就是更好比例。科技多头集中值得观察，但不足以从这个标签直接算出卖一半最优。", "fact_ids": ["f_futures", "f_portfolio", "f_sk"]}
+        ],
+        "short_window_resolution": {
+          "aligned": {
+            "reason": "经营支撑尚在，按当前赎回费用，继续持有的预期净额不低于现在退出。",
+            "fact_ids": ["f_cash", "f_nv", "f_sk"],
+            "operation_advice": {
+              "action": "hold",
+              "reason": "经营支撑尚在，按当前赎回费用，继续持有的预期净额不低于现在退出。",
+              "next_step": "按所选日期复核；若经营回款与订单支撑转弱，提前重新考虑退出。"
+            }
+          },
+          "opposed": {
+            "reason": "按所选这段时间和当前费用，现在退出预计保留的钱更多，不为长期产业看法硬做这段等待。",
+            "fact_ids": ["f_cash", "f_nv", "f_nv_plan", "f_cost", "f_sk"],
+            "operation_advice": {
+              "action": "redeem",
+              "reason": "按所选这段时间和当前费用，现在退出预计保留的钱更多，不为长期产业看法硬做这段等待。",
+              "next_step": "退出后先留现金，等这段期限的费用后买入空间改善，再重新评估。"
+            }
+          },
+          "unavailable": {
+            "reason": "经营依据尚未被推翻，缺少准确期限测算还不是清仓理由，已有份额先持有。",
+            "fact_ids": ["f_cash", "f_nv", "f_cost", "f_sk"],
+            "operation_advice": {
+              "action": "hold",
+              "reason": "经营依据尚未被推翻，缺少准确期限测算还不是清仓理由，已有份额先持有。",
+              "next_step": "先补算所选期限的持有与退出净额，再复核是否卖出。"
+            }
+          }
+        },
+        "checks": [
+          {"condition": "下一份经营资料是否推翻现金回收与订单支撑", "effect": "若关键支撑失效，重新比较减仓或退出，不等回本或固定天数", "fact_ids": ["f_cash", "f_nv_plan", "f_sk"]},
+          {"condition": "新持仓披露是否大幅改变科技与期货敞口", "effect": "重新核对买这只基金的任务和反方；披露变化本身需解释，不自动翻转动作", "fact_ids": ["f_portfolio", "f_futures"]}
+        ]
+      },
+      "addition": {
+        "action": "add",
+        "reason": "原研究支持AI产业的边际经营机会，新增资金与新买面对同一机会。但追加会增加同一周期风险，新份额另有费用；是否追加必须以当前所选期限的费用后结果裁决，不因已经持有或总金额更大而建议加钱。",
+        "fact_ids": ["f_nv", "f_nv_plan", "f_ts", "f_sk", "f_futures", "f_portfolio"],
+        "why_not": [
+          {"action": "hold", "reason": "持有不追加能保留现金，也不扩大已有科技风险，代价是少参与一笔可能的经营增长。已有经营支持不代表追加在每个期限都值得；新增费用后不如现金时，本次不追加。", "fact_ids": ["f_nv", "f_sk", "f_futures", "f_portfolio", "f_peer"]},
+          {"action": "exit", "reason": "退出与追加表达相反的产业判断；目前销售、现金和订单的支持尚未被回款与周期反方推翻，因此不选择清仓。换539002仅改费用，换100055仍押科技，不能当作已经分散。", "fact_ids": ["f_cash", "f_nv", "f_cost", "f_peer"]},
+          {"action": "reduce50", "reason": "减半可降风险，但没有事实或个人目标支持把50%指定为当前最优。新增选择必须承认期货和存储集中，而不能用金额表里追加终值最大来证明应该加。", "fact_ids": ["f_futures", "f_portfolio", "f_sk"]}
+        ],
+        "short_window_resolution": {
+          "aligned": {
+            "reason": "新增资金仍有经营依据，所选这段时间扣除新增份额费用后，追加预计比保留现金更合算。",
+            "fact_ids": ["f_nv", "f_sk", "f_futures", "f_portfolio"],
+            "operation_advice": {
+              "action": "add",
+              "reason": "新增资金仍有经营依据，所选这段时间扣除新增份额费用后，追加预计比保留现金更合算。",
+              "next_step": "按所选日期复核新增部分；若回款或存储订单明显转弱，先停止追加。"
+            }
+          },
+          "opposed": {
+            "reason": "新增一笔在所选这段时间扣费后不如保留现金，已有部分先持有，这次不追加。",
+            "fact_ids": ["f_cash", "f_nv", "f_sk", "f_futures", "f_cost"],
+            "operation_advice": {
+              "action": "hold",
+              "reason": "新增一笔在所选这段时间扣费后不如保留现金，已有部分先持有，这次不追加。",
+              "next_step": "等新增这笔的费用后预期净额高于留现金，再考虑追加。"
+            }
+          },
+          "unavailable": {
+            "reason": "还没算出新增这笔在所选期限内的费用后净额，先持有已有份额，不追加。",
+            "fact_ids": ["f_nv", "f_sk", "f_cost", "f_futures"],
+            "operation_advice": {
+              "action": "hold",
+              "reason": "还没算出新增这笔在所选期限内的费用后净额，先持有已有份额，不追加。",
+              "next_step": "补算新增份额对应期限的净额；确认日期来不及就先调整日期。"
+            }
+          }
+        },
+        "checks": [
+          {"condition": "存储价格、交付或长期协议重定价是否证实高利润持续性转弱", "effect": "停止把低运行率倍数当新增理由，优先重估追加，再看已有份额是否也应减少", "fact_ids": ["f_sk", "f_price"]},
+          {"condition": "新增资金实际任务是否为分散科技风险或明确近期使用", "effect": "对应任务应留现金或寻找不同风险来源，不继续按产业追加理由处理", "fact_ids": ["f_futures", "f_portfolio", "f_peer"]}
+        ]
+      }
+    }
+  }
+]

@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "studies": [
+    {
+      "id": "018147-monthly-v1",
+      "title": "018147 C 月度动量研究：两个固定历史窗口",
+      "product": {
+        "id": "research:018147:C",
+        "symbol": "018147",
+        "name": "建信新兴市场混合(QDII)C",
+        "kind": "open_fund",
+        "is_demo": false,
+        "exchange": "",
+        "category": "新兴市场偏股混合QDII",
+        "share_class": "C"
+      },
+      "source": {
+        "path": "runs/artifacts/research-018147-20261020T082509/nav-source/provider_result.json",
+        "sha256": "57684c0c8d4834f5982a0721da1425bd20f9a2078a43acc5ab36ce89d6ebb4ba",
+        "canonical_hash": "b02aeda6eb51c4140fad0251496278442cb3d68a8312e56a6d6738fba77d4b57"
+      },
+      "evidence": [
+        {
+          "path": "runs/artifacts/research-018147-20261020T082509/actions-attempt-1/raw.html",
+          "sha256": "4682bf225dedbf08996c5b5c41d06f19ee59fcca02b6f83445dc50ddcf998a4b"
+        },
+        {
+          "path": "runs/artifacts/research-018147-20261020T082509/fees-attempt-1/error.json",
+          "sha256": "f12578f45e56ef7b2ad5bf3e36016b1e527774d080bd6372a393cdfc2aa14bfd"
+        },
+        {
+          "path": "runs/artifacts/research-018147-20261020T082509/fees-attempt-2/raw.html",
+          "sha256": "62bd12b70da3eefd61598ed75da1799ef28a6bfb9b8293762cb82d4b95b981b8"
+        }
+      ],
+      "windows": [
+        {
+          "id": "earlier",
+          "label": "较早窗口 · 2023-07-03 至 2024-06-28",
+          "start": "2023-07-03",
+          "end": "2024-06-28",
+          "inputs": {
+            "path": "runs/artifacts/research-018147-monthly-20261020-v2/earlier/results/inputs.json",
+            "sha256": "a63a9b754bddf3b0cd7932a168c4985c5f9a715f8438393cc75224f77771bfff",
+            "canonical_hash": "f571c2053190ebbdc01f3124228c61c4d071121060d00cf9527b9af02c113c67"
+          },
+          "report": {
+            "path": "runs/artifacts/research-018147-monthly-20261020-v2/earlier/results/report.json",
+            "sha256": "77d9e1610e3ef38eccb60649ecfdfe7ce6bc758d1646ca61c960e8882e686a71",
+            "canonical_hash": "146ba634ebdedc244a9b7f645c78301510163daec510923cedea38e1363ff4b3"
+          },
+          "manifest": {
+            "path": "runs/artifacts/research-018147-monthly-20261020-v2/earlier/results/manifest.json",
+            "sha256": "0f4a644717b58503cc7744fbb018308f2671a250885e37b15de1d567e102e7e9",
+            "canonical_hash": "281348930cd08f828fe2e1d58dbdea807de34891f0583b26b8130b250f8fcc16"
+          }
+        },
+        {
+          "id": "later",
+          "label": "较近窗口 · 2024-10-21 至 2026-10-16",
+          "start": "2024-10-21",
+          "end": "2026-10-16",
+          "inputs": {
+            "path": "runs/artifacts/research-018147-monthly-20261020-v2/later/results/inputs.json",
+            "sha256": "25afe12efae4ba02a427b2e1da9d312782a6e590a686de01b0a2285c0b01808e",
+            "canonical_hash": "46f5cb3b61ec1a273e12f7c69d13ed527ec828547cfd63c9fd3826491497e41c"
+          },
+          "report": {
+            "path": "runs/artifacts/research-018147-monthly-20261020-v2/later/results/report.json",
+            "sha256": "af8267703185d6c2415677aa06d3deaeed0662f46cfa711416de76470de7deff",
+            "canonical_hash": "e2522c7ce455f20c0bd77af69e721863816c5814d9fd5932f31a6db98a86ed99"
+          },
+          "manifest": {
+            "path": "runs/artifacts/research-018147-monthly-20261020-v2/later/results/manifest.json",
+            "sha256": "63d2b28709f9399f28e40274416b37b9a158b70cb07f22caf95d68a4fbc6b9e6",
+            "canonical_hash": "799fac0c6c2e58f33ef0698c45ac609420551b3592d2350b1fbc5699749b0b17"
+          }
+        }
+      ]
+    }
+  ]
+}

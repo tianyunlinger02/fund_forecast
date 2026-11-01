@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.claude-tmp/
+data/
+runs/
+*.sqlite*
+.env
+.claude/scheduled_tasks.lock

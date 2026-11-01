@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rmbfund"
+version = "0.1.0"
+description = "Free-source, local fund research and auditable paper trading"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28,<1",
+  "numpy>=2.4,<3",
+  "pandas>=2.2,<4",
+  "plotly>=6,<7",
+  "streamlit>=1.66,<2",
+]
+
+[project.optional-dependencies]
+market = ["akshare>=1.17,<2"]
+research = ["scikit-learn==1.9.1"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+rmbfund = "rmbfund.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rmbfund"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["online: explicitly enabled free-source network checks"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

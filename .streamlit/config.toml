@@ -1,0 +1,23 @@
+[client]
+toolbarMode = "viewer"
+showSidebarNavigation = false
+
+[theme]
+base = "light"
+font = "sans-serif"
+baseRadius = "large"
+buttonRadius = "full"
+
+[theme.light]
+primaryColor = "#2a78d6"
+chartCategoricalColors = ["#2a78d6"]
+backgroundColor = "#f9f9f7"
+secondaryBackgroundColor = "#fcfcfb"
+textColor = "#0b0b0b"
+
+[theme.dark]
+primaryColor = "#3987e5"
+chartCategoricalColors = ["#2a78d6"]
+backgroundColor = "#0d0d0d"
+secondaryBackgroundColor = "#1a1a19"
+textColor = "#ffffff"

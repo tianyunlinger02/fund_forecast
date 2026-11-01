@@ -1,0 +1,7 @@
+{
+  "protocol": "openai_chat_completions",
+  "base_url": "",
+  "model": "",
+  "timeout": 120,
+  "max_tokens": 16000
+}

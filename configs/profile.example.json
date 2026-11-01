@@ -1,0 +1,25 @@
+{
+  "id": "REPLACE-WITH-A-NEW-VERSION-ID",
+  "product_id": "open_fund:REPLACE:",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "observed_at": "2026-01-01T00:00:00+08:00",
+  "source_url": "https://example.org/replace-with-official-product-document",
+  "verified": false,
+  "rules": {
+    "calendar_id": "REPLACE-WITH-VERIFIED-CALENDAR",
+    "events_complete_through": "2026-01-01",
+    "status_max_age_days": 0,
+    "cash_precision": 2,
+    "share_precision": 2,
+    "cutoff": "REPLACE",
+    "subscription_rate": "REPLACE",
+    "subscription_min": "REPLACE",
+    "confirm_days": "REPLACE",
+    "redemption_confirm_days": "REPLACE",
+    "redemption_cash_days": "REPLACE",
+    "redemption_tiers": [],
+    "dividend_mode": "cash",
+    "note": "这是未核验结构模板；必须核实份额类别/实际渠道/费用/日历/权益/结算约定后另建版本。不要仅切换verified来绕过安全门槛。"
+  }
+}
