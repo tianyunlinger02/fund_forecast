@@ -172,6 +172,16 @@ def build_trade_plan(
 
         lag = count_after(anchor, application) if anchor is not None else None
         horizon = count_after(application, sale) if sale is not None else 0
+        # Persist only the H slots after application.  The schedule also visits
+        # anchor-to-application dates for L and confirmation dates after the
+        # deadline; neither belongs to the positional H -> date contract.
+        if sale is None or sale <= application:
+            assumed_open.clear()
+        else:
+            assumed_open.intersection_update(
+                day for day in assumed_open
+                if application < date.fromisoformat(day) <= sale
+            )
         return application, sale, confirmation, lag, horizon
 
     missing = None

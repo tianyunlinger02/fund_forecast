@@ -868,3 +868,79 @@ def test_brief3_history_uses_saved_presentation_only_and_never_legacy_fallback(t
         assert "保存展示的经济原因" in shown and "保存展示的下次复核条件" in shown
         assert len(at.get("plotly_chart")) == 1
     assert repository.assessment_detail(envelope["id"])["assessment"] == original
+
+
+def test_schema2_forecast_chart_history_replays_saved_points_ranges_and_table(tmp_path, monkeypatch):
+    from rmbfund import buyer_view
+    from rmbfund.ui import buyer, buyer_view as view_ui, charts, trade
+
+    payload = projected_buyer_saved_json()
+    chart = payload["forecast_chart"]
+    chart["schema_version"] = 2
+    chart["forecast"].update(
+        requested_horizons=[1, 2, 3],
+        points_status="partial",
+        points_unavailable_horizons=[2],
+        points_missing_fields={"H=2": ["condition_date", "exact_head"]},
+        points=[
+            {"horizon": 1, "label": "H=1", "entry_lag": 2, "date": "2026-09-26",
+             "status": "available", "expected_change": 0.01, "lower": -0.01, "upper": 0.03},
+            {"horizon": 2, "label": "H=2", "entry_lag": 2, "date": None,
+             "status": "unavailable", "expected_change": None, "lower": None, "upper": None,
+             "reason": "保存时没有对应条件日期。"},
+            {"horizon": 3, "label": "H=3", "entry_lag": 2, "date": "2026-09-29",
+             "status": "partial", "expected_change": 0.03, "lower": None, "upper": None,
+             "reason": "保存时只有预期涨跌。"},
+        ],
+    )
+    original = deepcopy(payload)
+    repository, (envelope,) = store_snapshots(tmp_path, monkeypatch, payload)
+    rendered = []
+    figures = []
+    renderer = view_ui.render_forecast_chart
+    figure_renderer = view_ui.forecast_figure
+
+    def capture_figure(value, *, _renderer=figure_renderer, **kwargs):
+        figure = _renderer(value, **kwargs)
+        figures.append(figure)
+        return figure
+
+    def replay(value, *, _renderer=renderer, **kwargs):
+        rendered.append(deepcopy(value))
+        return _renderer(value, **kwargs)
+
+    monkeypatch.setattr(view_ui, "forecast_figure", capture_figure)
+    monkeypatch.setattr(view_ui, "render_forecast_chart", replay)
+    forbid_recalculation(monkeypatch)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("schema2 history must replay the saved chart without projecting it")
+
+    for module, names in (
+        (buyer_view, ("build_buyer_view", "build_forecast_chart")),
+        (charts, ("build_forecast_chart",)),
+        (buyer, ("render_decision_brief", "render_saved_buyer")),
+        (trade, ("render_scenario", "render_sale_comparison")),
+    ):
+        for name in names:
+            monkeypatch.setattr(module, name, forbidden)
+
+    at = AppTest.from_function(
+        history_entry, args=(str(tmp_path), payload["subject"]), default_timeout=20
+    ).run()
+    assert not at.exception and not at.error
+    assert rendered == [original["forecast_chart"]]
+    assert len(at.get("plotly_chart")) == 1
+    htmls = [node.proto.body for node in at.get("html")]
+    table_html = " ".join(htmls)
+    assert all(value in table_html for value in (
+        "H=1", "H=2", "H=3", "暂不可用", "+1.00%", "中间80%范围下限",
+    ))
+    assert len(figures) == 1
+    figure = figures[0]
+    marker = next(trace for trace in figure.data if trace.name == "各目标点预期涨跌")
+    interval = next(trace for trace in figure.data if trace.name == "各目标点中间80%范围")
+    assert list(marker.x) == ["H=1", "H=3"]
+    assert list(interval.x) == ["H=1", "H=1"]
+    assert list(figure.layout.xaxis2.categoryarray) == ["H=1", "H=2", "H=3"]
+    assert repository.assessment_detail(envelope["id"])["assessment"] == original

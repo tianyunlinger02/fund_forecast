@@ -62,30 +62,39 @@ def _accessible_table(rows: list[dict[str, str]], *, caption: str) -> None:
 
 
 def render_forecast_chart(snapshot: Mapping, *, key: str = "forecast_chart", theme: str = "light") -> None:
-    """Show real NAV and one return endpoint, with the same public data in tables.
+    """Show real NAV and independent conditional return targets.
 
     The host passes the current light/dark theme. Plot data, tooltip customdata,
     alt text, and accessible tables never receive ``snapshot.identity``.
     """
-    st.subheader("净值历史与计划期末估计")
+    st.subheader("净值历史与未来目标点预估")
     forecast = snapshot.get("forecast") or {}
     point = forecast.get("point")
+    points = forecast.get("points")
     st.plotly_chart(
         forecast_figure(snapshot, theme=theme), width="stretch", theme=None, key=key,
         config={"displayModeBar": False, "responsive": True, "scrollZoom": False},
-        alt="上图为已公布单位净值；下图菱形为计划期末预期涨跌，竖线为中间80%范围，横线为0%。完整数值可展开图表数据查看。",
+        alt="上图为已公布单位净值；下图为申请后各目标净值点的独立预期涨跌，竖线是各点自己的中间80%范围，横线为0%。点与点之间不表示每天净值路径。完整数值可展开图表数据查看。",
     )
     start, end = forecast.get("application_date"), forecast.get("sale_date")
     if start and end:
-        st.caption(markdown_text(f"下图估计 {start} 至 {end} 的净值变化；日期按这次计划假定，不代表未来实际净值日。"))
-    if not point:
+        st.caption(markdown_text(f"下图估计 {start} 至 {end} 的净值变化；目标点按这次条件日程排列，日期不是已知未来净值日。"))
+    if points is not None:
+        status = forecast.get("points_status")
+        if status == "stale":
+            st.info("这组目标点的计算已过期，保留原保存结果但不当作今天的新预测。")
+        elif not any(row.get("status") in {"available", "partial"} for row in points):
+            st.info("没有可绘制的精确目标点；不拿其他期限或成交起点补画。")
+        elif any(row.get("status") in {"unavailable", "stale"} for row in points):
+            st.caption("部分目标点暂不可用，表格会列出缺口；没有用邻近期限代替。")
+    elif not point:
         st.info("还没有与这次计划的起点和期限对应的涨跌估计；不拿其他期限补画。")
     elif point.get("lower") is None or point.get("upper") is None:
         st.caption("这次只保存了预期涨跌，尚无对应的中间80%范围。")
-    st.caption("历史模型参考，尚未验证择时优势。净值未计分红再投资，估计未扣申赎费；竖线是分布范围，不是平均值的误差或保证。")
+    st.caption("历史模型参考，尚未验证择时优势。净值未计分红再投资，估计未扣申赎费；竖线是各目标点的分布范围，不是平均值的误差或保证。")
     with st.expander("图表数据（可用键盘查看）"):
         tables = forecast_table_rows(snapshot)
         _accessible_table(tables["history"], caption="已公布的单位净值")
-        _accessible_table(tables["forecast"], caption="计划期末的涨跌估计")
+        _accessible_table(tables["forecast"], caption="未来目标点涨跌估计")
         if not tables["history"] and not tables["forecast"]:
             st.caption("这次还没有可展示的数值。")

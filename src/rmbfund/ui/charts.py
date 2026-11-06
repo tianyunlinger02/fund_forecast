@@ -672,13 +672,12 @@ def research_figure(
 
 
 def forecast_figure(snapshot: Mapping[str, Any], *, theme: str = "light") -> go.Figure:
-    """Two separate scales: actual unit NAV, then a single conditional return.
+    """Show actual NAV separately from exact conditional return targets.
 
-    The vertical p10/p90 segment is independent of the mean marker. In a skewed
-    distribution the mean can lie outside that interval, so error bars anchored
-    on the mean would be incorrect. No trace ever joins history to the forecast,
-    or connects forecasts of different horizons into a future price path.
-    ``forecast_table_rows`` is the public, equivalent table contract.
+    Each future target is an independent H/L forecast. The p10/p90 segment is
+    independent of its mean marker, and different horizons are never connected
+    into a fabricated future NAV path. ``forecast_table_rows`` is the public,
+    equivalent table contract.
     """
     from plotly.subplots import make_subplots
 
@@ -715,7 +714,67 @@ def forecast_figure(snapshot: Mapping[str, Any], *, theme: str = "light") -> go.
             x=0.5, y=0.83, xref="paper", yref="paper", showarrow=False,
             text="还没有可展示的实际净值记录", font={"color": palette["secondary"], "size": 13},
         )
-    if point:
+    points = forecast.get("points")
+    all_points = list(points or ())
+    all_labels = [str(row.get("label") or f"H={row.get('horizon')}") for row in all_points]
+    plotted_points = [row for row in all_points
+                      if row.get("status") in {"available", "partial"}
+                      and row.get("expected_change") is not None]
+    if points is not None:
+        labels = [str(row.get("label") or f"H={row.get('horizon')}") for row in plotted_points]
+        means = [float(row["expected_change"]) for row in plotted_points]
+        if means:
+            figure.add_trace(go.Scatter(
+                x=labels, y=means, mode="markers", name="各目标点预期涨跌", legendrank=2,
+                marker={"color": palette["series"][1], "size": 12, "symbol": "diamond",
+                        "line": {"color": palette["surface"], "width": 2}},
+                customdata=[[row.get("horizon"), row.get("date") or "条件日期未映射",
+                             row.get("status"), row.get("expected_change")]
+                            for row in plotted_points],
+                hovertemplate=("<b>%{y:+.2%}</b> · %{customdata[0]}笔净值"
+                               "<br>条件日期 %{customdata[1]}<br>预期涨跌 %{customdata[3]:+.2%}"
+                               "<br>状态 %{customdata[2]}<extra></extra>"),
+            ), row=2, col=1)
+        interval_index = 0
+        values = [0, *means]
+        for row in plotted_points:
+            lower, upper = row.get("lower"), row.get("upper")
+            if lower is None or upper is None:
+                continue
+            label = str(row.get("label") or f"H={row.get('horizon')}")
+            figure.add_trace(go.Scatter(
+                x=[label, label], y=[lower, upper], mode="lines+markers",
+                name="各目标点中间80%范围" if interval_index == 0 else "各目标点中间80%范围",
+                legendrank=3, showlegend=interval_index == 0,
+                line={"color": palette["series"][1], "width": 2},
+                marker={"color": palette["series"][1], "size": 12, "symbol": "line-ew"},
+                customdata=[[row.get("horizon"), row.get("date") or "条件日期未映射",
+                             row.get("status")] ] * 2,
+                hovertemplate=("<b>%{y:+.2%}</b><br>%{customdata[0]}笔净值 · "
+                               "条件日期 %{customdata[1]}<br>中间80%范围端点"
+                               "<br>状态 %{customdata[2]}<extra></extra>"),
+                connectgaps=False,
+            ), row=2, col=1)
+            values.extend([lower, upper])
+            interval_index += 1
+        if means:
+            figure.add_annotation(
+                x=labels[-1], y=means[-1], xref="x2", yref="y2", showarrow=False,
+                text=f"H={plotted_points[-1].get('horizon')} {means[-1]:+.2%}",
+                xanchor="left", xshift=19,
+                font={"color": palette["text"], "size": 12}, bgcolor=palette["surface"],
+            )
+            low, high = min(values), max(values)
+            span = high - low or 0.02
+            figure.update_yaxes(range=[low - span * 0.18, high + span * 0.18], row=2, col=1)
+        else:
+            figure.add_annotation(
+                x=0.5, y=0.19, xref="paper", yref="paper", showarrow=False,
+                text="没有可绘制的精确目标点；缺口见下方表格。",
+                font={"color": palette["secondary"], "size": 13},
+            )
+            figure.update_yaxes(range=[-0.01, 0.01], row=2, col=1)
+    elif point:
         day, mean = point["date"], point["expected_change"]
         lower, upper = point.get("lower"), point.get("upper")
         if lower is not None and upper is not None:
@@ -757,7 +816,7 @@ def forecast_figure(snapshot: Mapping[str, Any], *, theme: str = "light") -> go.
         showlegend=len(figure.data) >= 2,
         legend={"orientation": "h", "x": 0, "y": -0.19,
                 "entrywidth": 105, "entrywidthmode": "pixels", "font": {"color": palette["text"]}},
-        hovermode="x unified", hoverdistance=32,
+        hovermode="closest", hoverdistance=32,
         hoverlabel={"bgcolor": palette["surface"], "font": {"color": palette["text"]}},
     )
     figure.update_annotations(font_color=palette["text"], font_size=14)
@@ -778,11 +837,19 @@ def forecast_figure(snapshot: Mapping[str, Any], *, theme: str = "light") -> go.
     )
     figure.update_xaxes(type="date", nticks=3, hoverformat="%Y-%m-%d", row=1, col=1)
     figure.update_yaxes(title_text="净值涨跌", tickformat="+.1%", row=2, col=1)
+    point_labels = all_labels if points is not None else []
+    point_ticktext = [
+        f"{label}<br>{row.get('date')}" if row.get("date") else f"{label}<br>日期未映射"
+        for label, row in zip(point_labels, all_points, strict=True)
+    ]
     figure.update_xaxes(
         type="category", showspikes=False,
-        tickmode="array", tickvals=[point["date"]] if point else [],
-        ticktext=[point["date"]] if point else [],
-        title_text="条件计划期末<br>不是已知的未来净值日", row=2, col=1,
+        tickmode="array", categoryorder="array",
+        categoryarray=point_labels if points is not None else [],
+        tickvals=point_labels if points is not None else [point["date"]] if point else [],
+        ticktext=point_ticktext if points is not None else [point["date"]] if point else [],
+        title_text="申请后目标净值点<br>日期为条件日程，不是已知未来净值日" if points is not None
+        else "条件计划期末<br>不是已知的未来净值日", row=2, col=1,
     )
     return figure
 
@@ -796,8 +863,23 @@ def forecast_table_rows(snapshot: Mapping[str, Any]) -> dict[str, list[dict[str,
     history_rows = [{"净值日期": row["date"], "单位净值": str(row["value"]), "币种": currency}
                     for row in history.get("points") or []]
     point = forecast.get("point")
+    points = forecast.get("points")
     forecast_rows = []
-    if point:
+    if points is not None:
+        for row in points:
+            expected = row.get("expected_change")
+            forecast_rows.append({
+                "目标": str(row.get("label") or f"H={row.get('horizon')}"),
+                "条件日期": str(row.get("date") or "未映射"),
+                "状态": {"available": "可用", "partial": "只有预期涨跌",
+                         "unavailable": "暂不可用", "stale": "已过期"}.get(
+                             row.get("status"), "未提供"),
+                "预期涨跌": f"{expected:+.2%}" if expected is not None else "未提供",
+                "中间80%范围下限": f"{row['lower']:+.2%}" if row.get("lower") is not None else "未提供",
+                "中间80%范围上限": f"{row['upper']:+.2%}" if row.get("upper") is not None else "未提供",
+                "说明": str(row.get("reason") or ""),
+            })
+    elif point:
         forecast_rows = [{
             "估计区间起点（条件日期）": forecast.get("application_date") or "未提供",
             "计划期末（条件日期）": point["date"],

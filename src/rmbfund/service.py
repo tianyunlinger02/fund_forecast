@@ -1820,23 +1820,33 @@ class Workspace:
     def calculate_timing(
         self, product_id: str, *, context: Mapping | None = None,
         model_id: str = "nav_ridge_empirical_v2", include_history: bool = False,
-        calendar_days: int | None = None, decision_at: str | None = None,
+        include_curve: bool = False, calendar_days: int | None = None,
+        decision_at: str | None = None,
     ) -> dict[str, Any]:
         """Explicit RAM-only hypothetical forecast; never update, issue, score or write."""
         if not isinstance(include_history, bool):
             raise ValidationError("include_history必须是布尔值")
+        if not isinstance(include_curve, bool):
+            raise ValidationError("include_curve必须是布尔值")
         captured_at = decision_at if decision_at is not None else now_iso()
         result = self.timing_inputs(
             product_id, context=context, model_id=model_id, calendar_days=calendar_days,
             decision_at=captured_at,
         )
-        return self._calculate_prepared_timing(result, include_history=include_history)
+        return self._calculate_prepared_timing(
+            result, include_history=include_history, include_curve=include_curve,
+        )
 
     @staticmethod
-    def _calculate_prepared_timing(result: dict, *, include_history: bool = False) -> dict:
+    def _calculate_prepared_timing(
+        result: dict, *, include_history: bool = False, include_curve: bool = False,
+    ) -> dict:
         """Fit only the captured inputs, sharing the original timing engine."""
+        if not isinstance(include_history, bool) or not isinstance(include_curve, bool):
+            raise ValidationError("timing calculation flags must be boolean")
         from .forecast import (
-            fit_local_timing_forecast, fit_runtime_forecast, reconstruct_investment_history,
+            fit_local_timing_forecast, fit_runtime_forecast, local_curve_horizons,
+            reconstruct_investment_history,
         )
 
         product_id = result["product"]["id"] if result.get("product") else None
@@ -1850,7 +1860,20 @@ class Workspace:
                      "entry_lags": tuple(result["entry_assumptions"]["entry_lags"])}
         try:
             if calendar_days is not None:
-                arguments["horizons"] = (result["trade_plan"]["horizon"],)
+                plan_horizon = result["trade_plan"]["horizon"]
+                requested_horizons = (local_curve_horizons(plan_horizon)
+                                      if include_curve else (plan_horizon,))
+                arguments["horizons"] = requested_horizons
+                result["calculation"].update(
+                    include_curve=include_curve,
+                    timestamp_kind="calculated",
+                    requested_horizons=list(requested_horizons),
+                )
+                if include_curve:
+                    identity = dict(result.get("local_request_identity") or {})
+                    identity.update(include_curve=True, requested_horizons=list(requested_horizons))
+                    result["local_request_identity"] = identity
+                    result["cache_key"] = digest(identity)
                 if investment is None:
                     prediction = fit_local_timing_forecast(
                         result["series"], include_history=include_history, **arguments,

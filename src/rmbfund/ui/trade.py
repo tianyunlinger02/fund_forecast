@@ -335,6 +335,7 @@ def render_standard(
     saved = forecast_ui._scope(subject)
     _load_conditions(subject, saved, load_conditions)
     scope = st.session_state["forecast_subject_scope"]
+    curve_display = st.session_state.get("fund_timing_curve_display", {}).get(scope, False)
     report = dict(report)
     series = report.get("scenario_series") or []
     days = sorted({row["date"] for row in series if row.get("date")})
@@ -354,7 +355,8 @@ def render_standard(
         saved["calendar_days"] = calendar_days
         if calculate is not None:
             try:
-                report.update(calculate(calendar_days=calendar_days, lookup_only=True))
+                report.update(calculate(calendar_days=calendar_days, lookup_only=True,
+                                         include_curve=curve_display))
                 if report.get("series") is not None:
                     series = report["series"]
             except (ValidationError, ValueError, TypeError, KeyError):
@@ -421,7 +423,8 @@ def render_standard(
                 help="只用已有资料本地计算这个日期计划；不联网、不调用研究API，也不提交买卖。"):
             try:
                 with st.spinner("用已有资料计算这个日期计划…"):
-                    calculated = calculate(calendar_days=calendar_days, include_history=False)
+                    calculated = calculate(calendar_days=calendar_days, include_history=False,
+                                            include_curve=True)
                 report.update(dict(calculated))
                 if calculated.get("series") is not None:
                     series = calculated["series"]
@@ -453,7 +456,7 @@ def render_standard(
     if calculate is not None:
         try:
             report["sale_comparison"] = calculate(calendar_days=calendar_days,
-                sale_options=sale_options, lookup_only=True).get("sale_comparison")
+                sale_options=sale_options, lookup_only=True, include_curve=curve_display).get("sale_comparison")
         except (ValidationError, ValueError, TypeError, KeyError):
             report["sale_comparison"] = None
     if not report.get("sale_comparison"):
@@ -487,7 +490,9 @@ def render_standard(
                     mapping(cases.get("held")).get("preferred_action")), "reference_action": "hold"},
     })
     assessment["buyer_view"] = build_buyer_view(assessment, branch=branch)
-    assessment["forecast_chart"] = build_forecast_chart(assessment, series=series)
+    assessment["forecast_chart"] = build_forecast_chart(
+        assessment, series=series, prediction=prediction,
+    )
 
     render_buyer_view(assessment["buyer_view"], key="decision_card")
     if branch == "held":

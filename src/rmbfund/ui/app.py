@@ -494,18 +494,40 @@ def _timing_view(workspace: Any, product_id: str, model_id: str, context: Mappin
     if workspace is None or not hasattr(workspace, "calculate_timing"):
         return None
     cache = st.session_state.setdefault("fund_timing_cache", {})
+    curve_display = st.session_state.setdefault("fund_timing_curve_display", {})
+    display_scope = st.session_state.get("forecast_subject_scope") or (product_id, model_id)
 
-    def calculate(*, calendar_days, include_history=False, lookup_only=False,
+    def calculate(*, calendar_days, include_history=False, include_curve=False, lookup_only=False,
                   sale_options=None, compare_sales=False):
         selected = workspace.timing_inputs(product_id, context=context, model_id=model_id,
                                            calendar_days=calendar_days, decision_at=decision_at)
-        key = (product_id, model_id, selected.get("cache_key") or "unavailable")
+        plan = selected.get("trade_plan") or {}
+        base_key = (product_id, model_id, selected.get("cache_key") or "unavailable")
+        curve_key = ("curve", plan.get("horizon")) if include_curve else None
+        key = base_key + ((curve_key,) if curve_key is not None else ())
         sale_report = None
         if sale_options is not None:
             if hasattr(workspace, "sale_timing_inputs"):
                 prepared = workspace.sale_timing_inputs(product_id, context=context, model_id=model_id,
                     calendar_days=calendar_days, decision_at=decision_at, **sale_options)
-                cached = {row["cache_key"]: cache.get((product_id, model_id, row["cache_key"]), {}).get("current")
+                def cached_sale_prediction(request):
+                    base_sale_key = (product_id, model_id, request["cache_key"])
+                    candidate_keys = [base_sale_key, base_sale_key + (("curve", request["horizon"]),)]
+                    saved = next((cache.get(candidate, {}).get("current") for candidate in candidate_keys
+                                  if cache.get(candidate, {}).get("current")), None)
+                    if not isinstance(saved, Mapping) or not isinstance(saved.get("prediction"), Mapping):
+                        return None
+                    raw = saved["prediction"]
+                    horizon = request["horizon"]
+                    compact = deepcopy(dict(raw))
+                    compact["forecasts"] = [head for head in raw.get("forecasts", [])
+                                             if head.get("horizon") == horizon and head.get("entry_lag") == 0]
+                    compact["execution_forecasts"] = [head for head in raw.get("execution_forecasts", [])
+                                                       if head.get("horizon") == horizon]
+                    compact["requested_horizons"] = [horizon]
+                    return compact
+
+                cached = {row["cache_key"]: cached_sale_prediction(row)
                           for row in prepared.get("sale_requests", [])}
                 sale_report = (workspace.calculate_sale_timing(prepared, cached_predictions=cached)
                                if compare_sales else workspace.rebuild_sale_timing(prepared, cached_predictions=cached))
@@ -518,11 +540,19 @@ def _timing_view(workspace: Any, product_id: str, model_id: str, context: Mappin
                 sale_report = {"sale_comparison": build_sale_date_comparison(predictions,
                     plan=selected.get("trade_plan") or {}, **sale_options)}
         entry = cache.setdefault(key, {})
+        if include_curve and "history" not in entry:
+            # History is an independent report, not a prediction bundle. Share
+            # only that report with the curve flavor so a history-tool run is
+            # visible after the page restores its already-displayed curve.
+            saved_history = cache.get(base_key, {}).get("history")
+            if saved_history is not None:
+                entry["history"] = deepcopy(saved_history)
         name = "history" if include_history else "current"
         if sale_options is None and not lookup_only and name not in entry:
             result = workspace.calculate_timing(product_id, context=context, model_id=model_id,
                                                  calendar_days=calendar_days, decision_at=decision_at,
-                                                 include_history=include_history)
+                                                 include_history=include_history,
+                                                 include_curve=include_curve)
             entry[name] = dict(result)
             if include_history and result.get("status") == "ready":
                 entry.setdefault("current", {key: value for key, value in result.items() if key != "historical_forecasts"})
@@ -548,6 +578,10 @@ def _timing_view(workspace: Any, product_id: str, model_id: str, context: Mappin
         elif not result.get("prediction"):
             result.update(status="unavailable", prediction=None,
                           reasons=["这个日期计划还没有对应预测；点击本地计算，不借用其他期限。"])
+        if include_curve and not lookup_only and result.get("prediction"):
+            curve_display[display_scope] = True
+        elif include_curve and lookup_only and not result.get("prediction"):
+            curve_display.pop(display_scope, None)
         if sale_report is not None:
             result["sale_comparison"] = deepcopy(sale_report.get("sale_comparison"))
         return result

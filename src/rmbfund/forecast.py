@@ -165,6 +165,13 @@ def _horizons(values: Sequence[int]) -> tuple[int, ...]:
     return tuple(dict.fromkeys(values))
 
 
+def local_curve_horizons(plan_horizon: int) -> tuple[int, ...]:
+    """Return every exact target horizon used by a local plan curve."""
+    if isinstance(plan_horizon, bool) or not isinstance(plan_horizon, int) or plan_horizon <= 0:
+        raise ValidationError("curve horizon must be a positive integer NAV observation count")
+    return tuple(range(1, plan_horizon + 1))
+
+
 def _local_target_metadata(head: dict[str, Any]) -> None:
     head.update(local_contract=LOCAL_TIMING_CONTRACT, target_unit="nav_observations")
 

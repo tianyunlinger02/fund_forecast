@@ -244,3 +244,119 @@ def test_renderers_show_only_final_copy_and_public_chart_data_not_internal_snaps
     htmls = [node.proto.body for node in at.get("html")]
     assert any("<table>" in body and 'tabindex="0"' in body for body in htmls)
     assert all("INTERNAL_" not in body for body in htmls)
+
+
+def _curve_prediction(horizons=(1, 2, 3), lag=3):
+    return {
+        "generated_at": "2026-10-29T10:00:00+08:00",
+        "requested_horizons": list(horizons),
+        "calculation": {"include_curve": True, "timestamp_kind": "calculated"},
+        "execution_forecasts": [
+            {"horizon": horizon, "entry_lag": lag, "status": "available",
+             "expected_change": horizon / 100, "lower": -0.01,
+             "upper": 0.03, "interval_coverage": 0.8,
+             "target_definition_id": "raw_unit_nav_simple_return_v1",
+             "samples": ["SECRET_SAMPLE"], "drivers": [{"feature": "SECRET_DRIVER"}]}
+            for horizon in horizons
+        ],
+    }
+
+
+def test_local_curve_keeps_exact_heads_and_conditional_dates_without_nav_path():
+    source = assessment()
+    plan = source["trade_scenario"]["plan"]
+    plan.update(horizon=3, entry_lag=3, application_date="2026-10-29", sale_date="2026-11-02",
+                assumed_open_dates=["2026-10-30", "2026-10-31", "2026-11-02"])
+    primary = source["trade_scenario"]["decision"]["primary_head"]
+    primary.update(horizon=3, entry_lag=3)
+    snapshot = build_forecast_chart(source, series=series(), prediction=_curve_prediction())
+    assert snapshot["schema_version"] == 2
+    points = snapshot["forecast"]["points"]
+    assert [(row["horizon"], row["entry_lag"], row["date"]) for row in points] == [
+        (1, 3, "2026-10-30"), (2, 3, "2026-10-31"), (3, 3, "2026-11-02")
+    ]
+    assert [row["expected_change"] for row in points] == [0.01, 0.02, 0.03]
+    assert snapshot["forecast"]["point"]["date"] == "2026-11-02"
+    dumped = json.dumps(snapshot, ensure_ascii=False, allow_nan=False)
+    assert all(secret not in dumped for secret in ("SECRET_SAMPLE", "SECRET_DRIVER"))
+    figure = forecast_figure(snapshot)
+    future = [trace for trace in figure.data if trace.yaxis == "y2"]
+    assert any(trace.mode == "markers" and list(trace.x) == ["H=1", "H=2", "H=3"] for trace in future)
+    assert all(not (trace.mode == "lines+markers" and set(trace.x) & {"2026-10-29", "2026-10-26"})
+               for trace in future)
+    assert figure.layout.xaxis2.type == "category"
+
+
+def test_curve_missing_exact_head_is_a_gap_and_not_another_lag_or_horizon():
+    source = assessment()
+    source["trade_scenario"]["plan"].update(horizon=3, entry_lag=3,
+        application_date="2026-10-29", sale_date="2026-11-02",
+        assumed_open_dates=["2026-10-30", "2026-10-31", "2026-11-02"])
+    source["trade_scenario"]["decision"]["primary_head"].update(horizon=3, entry_lag=3)
+    prediction = _curve_prediction((1, 3), lag=3)
+    prediction["requested_horizons"] = [1, 2, 3]
+    prediction["execution_forecasts"].append({
+        "horizon": 2, "entry_lag": 4, "status": "available", "expected_change": 0.99,
+        "lower": 0.9, "upper": 1.0, "interval_coverage": 0.8,
+        "target_definition_id": "raw_unit_nav_simple_return_v1",
+    })
+    snapshot = build_forecast_chart(source, series=series(), prediction=prediction)
+    rows = snapshot["forecast"]["points"]
+    assert rows[1]["status"] == "unavailable"
+    assert rows[1]["expected_change"] is None
+    assert rows[1]["reason"]
+    assert snapshot["forecast"]["points_status"] == "partial"
+    assert forecast_table_rows(snapshot)["forecast"][1]["状态"] == "暂不可用"
+
+
+@pytest.mark.parametrize("dates", [
+    ["2026-10-30", "not-a-date", "2026-11-02"],
+    ["2026-10-30", "2026-10-30", "2026-11-02"],
+    ["2026-10-30", "2026-11-03", "2026-11-02"],
+    ["2026-10-30"],
+    [],
+])
+def test_curve_date_slots_keep_h_positions_and_never_fallback_to_sale_date(dates):
+    source = assessment()
+    source["trade_scenario"]["plan"].update(
+        horizon=3, entry_lag=3, application_date="2026-10-29", sale_date="2026-11-02",
+        assumed_open_dates=dates,
+    )
+    source["trade_scenario"]["decision"]["primary_head"].update(horizon=3, entry_lag=3)
+    snapshot = build_forecast_chart(source, series=series(), prediction=_curve_prediction())
+    rows = snapshot["forecast"]["points"]
+    assert [row["horizon"] for row in rows] == [1, 2, 3]
+    expected_dates = []
+    for index in range(3):
+        raw = dates[index] if index < len(dates) else None
+        expected_dates.append(
+            raw if raw in {"2026-10-30", "2026-10-31", "2026-11-02"}
+            and dates.count(raw) == 1 else None
+        )
+    assert [row["date"] for row in rows] == expected_dates
+    invalid = [row for row in rows if row["status"] == "unavailable"]
+    assert invalid
+    assert all(row["expected_change"] is None for row in invalid)
+    assert all(row["reason"] for row in invalid)
+    assert snapshot["forecast"]["points_unavailable_horizons"] == [row["horizon"] for row in invalid]
+    assert all(f"H={row['horizon']}" in snapshot["forecast"]["points_missing_fields"]
+               for row in invalid)
+
+
+def test_curve_axis_keeps_unavailable_h_category_slots_and_public_hover_fields():
+    source = assessment()
+    source["trade_scenario"]["plan"].update(
+        horizon=3, entry_lag=3, application_date="2026-10-29", sale_date="2026-11-02",
+        assumed_open_dates=["2026-10-30", "bad-date", "2026-11-02"],
+    )
+    source["trade_scenario"]["decision"]["primary_head"].update(horizon=3, entry_lag=3)
+    snapshot = build_forecast_chart(source, series=series(), prediction=_curve_prediction())
+    figure = forecast_figure(snapshot)
+    assert list(figure.layout.xaxis2.categoryarray) == ["H=1", "H=2", "H=3"]
+    assert list(figure.layout.xaxis2.tickvals) == ["H=1", "H=2", "H=3"]
+    assert "日期未映射" in " ".join(figure.layout.xaxis2.ticktext)
+    marker = next(trace for trace in figure.data if trace.name == "各目标点预期涨跌")
+    assert list(marker.x) == ["H=1", "H=3"]
+    assert "预期涨跌" in marker.hovertemplate and "状态" in marker.hovertemplate
+    interval = next(trace for trace in figure.data if trace.name == "各目标点中间80%范围")
+    assert "范围端点" in interval.hovertemplate and "状态" in interval.hovertemplate

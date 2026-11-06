@@ -407,6 +407,7 @@ def test_complete_calendar_is_conditional_and_missing_confirmation_switches_whol
     assert plan["calendar_basis"] == "available_profile_business_calendar"
     assert plan["application_date"] == "2026-10-30" and plan["sale_date"] == "2026-11-04"
     assert plan["entry_lag"] == 1 and plan["horizon"] == 3
+    assert plan["assumed_open_dates"] == ["2026-11-02", "2026-11-03", "2026-11-04"]
     assert any("假设" in note and "净值" in note for note in plan["assumptions"])
     missing_window = deepcopy(calendar)
     missing_window.pop("2026-11-04")

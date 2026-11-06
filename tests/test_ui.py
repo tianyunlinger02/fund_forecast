@@ -241,7 +241,7 @@ class FakeWorkspace:
         return result
 
     def calculate_timing(self, product_id, *, context=None, model_id=None, calendar_days=None,
-                         include_history=False, decision_at=None):
+                         include_history=False, include_curve=False, decision_at=None):
         result = self.timing_inputs(product_id, context=context, model_id=model_id,
                                    calendar_days=calendar_days, decision_at=decision_at)
         self.calculations.append((product_id, model_id, include_history, calendar_days))
@@ -250,11 +250,30 @@ class FakeWorkspace:
         horizon, lag = plan.get("horizon", 20), plan.get("entry_lag", 2)
         if not current or not horizon or lag is None or result["status"] != "ready":
             return {**result, "prediction": None}
-        for field in ("forecasts", "execution_forecasts"):
-            template = next(head for head in current[field] if head["horizon"] == 20)
-            current[field] = [{**deepcopy(template), "horizon": horizon,
-                              "entry_lag": 0 if field == "forecasts" else selected}
-                             for selected in ([0] if field == "forecasts" else [lag, lag + 1, lag + 2])]
+        templates = {
+            field: next(head for head in current[field] if head["horizon"] == 20)
+            for field in ("forecasts", "execution_forecasts")
+        }
+        if include_curve:
+            requested = list(range(1, horizon + 1))
+            current["requested_horizons"] = requested
+            current["forecasts"] = [{**deepcopy(templates["forecasts"]), "horizon": selected,
+                                     "entry_lag": 0,
+                                     "expected_change": float(templates["forecasts"].get("expected_change", 0))
+                                     + (selected - horizon) * 0.001}
+                                    for selected in requested]
+            current["execution_forecasts"] = [{**deepcopy(templates["execution_forecasts"]),
+                                               "horizon": selected_horizon, "entry_lag": selected_lag,
+                                               "expected_change": float(templates["execution_forecasts"].get("expected_change", 0))
+                                               + (selected_horizon - horizon) * 0.001}
+                                              for selected_horizon in requested
+                                              for selected_lag in (lag, lag + 1, lag + 2)]
+        else:
+            current["forecasts"] = [{**deepcopy(templates["forecasts"]), "horizon": horizon,
+                                     "entry_lag": 0}]
+            current["execution_forecasts"] = [{**deepcopy(templates["execution_forecasts"]),
+                                               "horizon": horizon, "entry_lag": selected}
+                                              for selected in (lag, lag + 1, lag + 2)]
         current["drivers"] = [{"horizon": horizon, "entry_lag": lag,
                                "feature": "log_return_20", "value": 0.02,
                                "contribution_log_return": 0.01}]
@@ -263,7 +282,10 @@ class FakeWorkspace:
         current["local_contract"] = "calendar_trade_nav_observations_v1"
         current.pop("record_id", None)
         result.update(prediction=current, selected_model_id=model_id,
-                      calculation={"kind": "local_hypothetical", "actual_issue": False, "persisted": False})
+                      calculation={"kind": "local_hypothetical", "actual_issue": False,
+                                   "persisted": False, "include_curve": include_curve})
+        current["calculation"] = dict(result["calculation"])
+
         if include_history:
             rows = result["series"]
             result["historical_forecasts"] = [{"horizon": horizon, "entry_lag": lag,
@@ -419,6 +441,42 @@ def open_decision(at):
 
 def seed(workspace, *, shares="100", cost="200"):
     return Portfolio(workspace.root).save_fund(PRODUCT, shares=shares, cost=cost)
+
+
+def test_timing_cache_flavors_never_leak_curve_into_single_head(tmp_path):
+    workspace = FakeWorkspace(tmp_path)
+
+    def app(workspace, product):
+        import streamlit as st
+        from rmbfund.ui.app import _timing_view
+
+        report = {"prediction": None}
+        calculate = _timing_view(
+            workspace, product["id"], "nav_ridge_empirical_v2", None,
+            workspace.detail, report,
+        )
+        single = calculate(calendar_days=30, include_curve=False)
+        curve = calculate(calendar_days=30, include_curve=True)
+        calls_after_curve = len(workspace.calculations)
+        single_again = calculate(calendar_days=30, include_curve=False)
+        st.session_state["cache_flavor_results"] = {
+            "single": single, "curve": curve, "single_again": single_again,
+            "calls_after_curve": calls_after_curve,
+            "calls_final": len(workspace.calculations),
+        }
+
+    at = AppTest.from_function(
+        app, args=(workspace, PRODUCT), default_timeout=20
+    ).run()
+    assert not at.exception
+    results = at.session_state["cache_flavor_results"]
+    assert results["single"]["prediction"].get("requested_horizons") is None
+    assert results["single"]["prediction"]["calculation"].get("include_curve") is False
+    assert results["curve"]["prediction"]["requested_horizons"] == list(range(1, 21))
+    assert results["curve"]["prediction"]["calculation"]["include_curve"] is True
+    assert results["single_again"]["prediction"].get("requested_horizons") is None
+    assert results["single_again"]["prediction"]["calculation"].get("include_curve") is False
+    assert results["calls_final"] == results["calls_after_curve"]
 
 
 def test_initial_portfolio_is_empty_even_with_research_sample_in_public_catalog(tmp_path):

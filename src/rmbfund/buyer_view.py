@@ -52,6 +52,16 @@ def _integer(value: Any, minimum: int) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= minimum
 
 
+def _timestamp(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        from .domain import timestamp
+        return timestamp(value).isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
 def _anchor(assessment: Mapping) -> Mapping:
     scenario = _mapping(assessment.get("trade_scenario"))
     for value in (scenario.get("anchor"), assessment.get("anchor"),
@@ -143,20 +153,27 @@ def _history_rows(series: Iterable[Mapping], anchor: Mapping) -> dict:
     }
 
 
-def build_forecast_chart(assessment: Mapping, *, series: Iterable[Mapping]) -> dict:
-    """Project actual NAV history and one exact calendar-plan return distribution.
+def build_forecast_chart(
+    assessment: Mapping, *, series: Iterable[Mapping], prediction: Mapping | None = None,
+) -> dict:
+    """Project actual NAV and exact conditional return targets without fitting.
 
     ``series`` is the caller-supplied ``scenario_series``/``series`` (date + nav)
     or fund-detail history (date + value); never fetch or use an anchor as fake
     history. ``expected_change``, ``lower`` and ``upper`` are the saved simple
-    fractions (.01 = 1%), with lower/upper the model contract's p10/p90. There is
-    no interpolation, sample re-quantiling, fee arithmetic, or NAV multiplication.
+    fractions (.01 = 1%), with lower/upper the model contract's p10/p90. The
+    optional prediction bundle is already captured by the caller; this function
+    only whitelists exact heads and never interpolates, re-quantiles, charges
+    fees, multiplies by NAV, or fits a model.
     """
     assessment = _mapping(assessment)
     scenario = _mapping(assessment.get("trade_scenario"))
     plan = _mapping(scenario.get("plan"))
     decision = _mapping(scenario.get("decision"))
     head = _mapping(decision.get("primary_head"))
+    saved_forecast = _mapping(assessment.get("forecast"))
+    prediction_bundle = (_mapping(prediction) if isinstance(prediction, Mapping)
+                         else saved_forecast)
     horizon, lag = plan.get("horizon"), plan.get("entry_lag")
     history = _history_rows(series, _anchor(assessment))
     missing, point = [], None
@@ -199,6 +216,111 @@ def build_forecast_chart(assessment: Mapping, *, series: Iterable[Mapping]) -> d
                 "date": plan["sale_date"], "expected_change": expected,
                 "lower": lower if bounds_valid else None, "upper": upper if bounds_valid else None,
             }
+    points = None
+    points_status = "missing"
+    requested_horizons = []
+    points_missing = []
+    curve_calculation = _mapping(prediction_bundle.get("calculation"))
+    curve_requested = curve_calculation.get("include_curve") is True
+    if curve_requested:
+        raw_requested = prediction_bundle.get("requested_horizons")
+        if isinstance(raw_requested, (list, tuple)):
+            requested_horizons = sorted({value for value in raw_requested
+                                         if _integer(value, 1)})
+        if not requested_horizons:
+            if _integer(horizon, 1):
+                requested_horizons = [horizon]
+            else:
+                points_missing.append("prediction.requested_horizons")
+        raw_open_dates = plan.get("assumed_open_dates")
+        raw_slots = list(raw_open_dates) if isinstance(raw_open_dates, (list, tuple)) else []
+        parsed_slots = [_day(raw_day) for raw_day in raw_slots]
+        duplicate_dates = {day for day in parsed_slots if day and parsed_slots.count(day) > 1}
+        application_day = _day(plan.get("application_date"))
+        sale_day = _day(plan.get("sale_date"))
+        date_slots = {}
+        date_reasons = {}
+        for target_horizon in requested_horizons:
+            index = target_horizon - 1
+            target_date = parsed_slots[index] if index < len(parsed_slots) else None
+            reason = None
+            if not target_date:
+                reason = "没有与该净值观察笔数对应的条件日期。"
+            elif target_date in duplicate_dates:
+                reason = "该条件日期对应多个目标位置，未展示该目标点。"
+            elif not application_day or not sale_day or not (application_day < target_date <= sale_day):
+                reason = "该条件日期不在本次申请日至计划卖出日之间。"
+            else:
+                date_slots[target_horizon] = target_date
+            if reason:
+                date_reasons[target_horizon] = reason
+        heads_by_key = {}
+        for raw_head in prediction_bundle.get("execution_forecasts") or ():
+            candidate = _mapping(raw_head)
+            key = (candidate.get("horizon"), candidate.get("entry_lag"))
+            heads_by_key.setdefault(key, []).append(candidate)
+        target_ids = {candidate.get("target_definition_id") for candidates in heads_by_key.values()
+                      for candidate in candidates if candidate.get("target_definition_id")}
+        target_mismatch = len(target_ids) > 1
+        points = []
+        for target_horizon in requested_horizons:
+            target_date = date_slots.get(target_horizon)
+            row = {
+                "horizon": target_horizon, "entry_lag": lag, "label": f"H={target_horizon}",
+                "date": target_date,
+                "date_basis": "conditional_assumed_open_date" if target_date else None,
+                "status": "unavailable", "expected_change": None,
+                "lower": None, "upper": None, "interval_quantiles": [0.1, 0.9],
+                "reason": date_reasons.get(target_horizon),
+            }
+            candidates = heads_by_key.get((target_horizon, lag), [])
+            if target_date:
+                if target_mismatch:
+                    row["reason"] = "目标定义不一致，未展示该目标点。"
+                elif len(candidates) != 1:
+                    row["reason"] = "没有与本次成交起点和期限完全对应的预测。"
+                else:
+                    candidate = candidates[0]
+                    candidate_status = candidate.get("status", "available")
+                    if candidate_status == "stale":
+                        row.update(status="stale", reason="该目标点的计算已过期，未按今天资料重画。")
+                    elif candidate_status != "available":
+                        row["reason"] = "该目标点暂时没有可用的精确预测。"
+                    else:
+                        expected = _number(candidate.get("expected_change"))
+                        if expected is None or expected < -1:
+                            row["reason"] = "该目标点的涨跌估计无效。"
+                        else:
+                            lower, upper = (_number(candidate.get("lower")),
+                                            _number(candidate.get("upper")))
+                            bounds_valid = (lower is not None and upper is not None and -1 <= lower <= upper
+                                            and ("interval_coverage" not in candidate
+                                                 or _number(candidate["interval_coverage"]) == 0.8))
+                            row.update(status="available" if bounds_valid else "partial",
+                                       expected_change=expected,
+                                       lower=lower if bounds_valid else None,
+                                       upper=upper if bounds_valid else None,
+                                       reason=None if bounds_valid else
+                                       "已保存预期涨跌，但没有可用的中间80%范围。")
+            points.append(row)
+        statuses = {row["status"] for row in points}
+        if not points:
+            points_status = "unavailable"
+        elif statuses <= {"available"}:
+            points_status = "ready"
+        elif statuses <= {"stale"}:
+            points_status = "stale"
+        elif any(row["status"] in {"available", "partial"} for row in points):
+            points_status = "partial"
+        else:
+            points_status = "unavailable"
+        points_missing.extend(
+            f"H={row['horizon']}" for row in points if row["status"] in {"unavailable", "stale"}
+        )
+        points_unavailable = [row["horizon"] for row in points if row["status"] == "unavailable"]
+    else:
+        points_unavailable = []
+
     forecast = {
         "status": forecast_status, "point": point, "horizon": horizon, "entry_lag": lag,
         "application_date": _day(plan.get("application_date")), "sale_date": _day(plan.get("sale_date")),
@@ -206,16 +328,30 @@ def build_forecast_chart(assessment: Mapping, *, series: Iterable[Mapping]) -> d
         "date_basis": "conditional_plan_sale_date", "interval_quantiles": [0.1, 0.9],
         "missing_fields": missing,
     }
-    saved_forecast = _mapping(assessment.get("forecast"))
+    if curve_requested:
+        forecast.update(
+            points=points, points_status=points_status,
+            requested_horizons=requested_horizons,
+            points_missing_fields=points_missing,
+            points_unavailable_horizons=points_unavailable,
+            points_application_date=_day(plan.get("application_date")),
+            points_sale_date=_day(plan.get("sale_date")), points_entry_lag=lag,
+            points_issued_at=_timestamp(prediction_bundle.get("generated_at")),
+            points_unit="simple_return", points_date_basis="conditional_plan_open_date",
+        )
+        if points_status != "ready" and forecast_status == "ready":
+            forecast_status = "partial"
+            forecast["status"] = forecast_status
     model_identity = _mapping(decision.get("model_identity"))
-    identity = {key: deepcopy(model_identity[key] if key in model_identity else saved_forecast.get(key))
+    identity_source = prediction_bundle or saved_forecast
+    identity = {key: deepcopy(model_identity[key] if key in model_identity else identity_source.get(key))
                 for key in _IDENTITY_FIELDS}
     identity["anchor"] = deepcopy(dict(_anchor(assessment)))
     product = _mapping(assessment.get("subject")) or _mapping(scenario.get("subject"))
     return {
-        "schema_version": 1, "kind": "buyer_forecast_chart",
+        "schema_version": 2 if curve_requested else 1, "kind": "buyer_forecast_chart",
         "status": "ready" if history["status"] == forecast_status == "ready" else
-                  "partial" if history["points"] or point else "unavailable",
+                  "partial" if history["points"] or point or points else "unavailable",
         "product": {key: deepcopy(product.get(key)) for key in ("name", "symbol", "share_class")},
         "data_date": _data_date(assessment) or (history["points"][-1]["date"] if history["points"] else None),
         "history": history, "forecast": forecast,

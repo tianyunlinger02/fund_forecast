@@ -125,6 +125,34 @@ def test_explicit_local_update_whole_history_weekends_and_dedup(context, monkeyp
         assert workspace.store.conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
 
 
+def test_local_curve_requests_exact_horizons_without_official_issue_or_write(context):
+    workspace, product_id = context
+    before = list(workspace.store.conn.iterdump())
+    result = workspace.calculate_timing(
+        product_id, calendar_days=20, decision_at=NOW, include_curve=True,
+    )
+    assert result["status"] == "ready"
+    prediction = result["prediction"]
+    plan = result["trade_plan"]
+    requested = list(range(1, plan["horizon"] + 1))
+    assert prediction["requested_horizons"] == requested
+    assert prediction["calculation"]["include_curve"] is True
+    assert prediction["calculation"]["requested_horizons"] == requested
+    assert {(head["horizon"], head["entry_lag"])
+            for head in prediction["execution_forecasts"] if head["entry_lag"] == plan["entry_lag"]} == {
+                (horizon, plan["entry_lag"]) for horizon in requested
+            }
+    assert result["calculation"]["actual_issue"] is False
+    assert result["calculation"]["persisted"] is False
+    assert list(workspace.store.conn.iterdump()) == before
+    assert not workspace.store.has_forecast_schema()
+
+    single = workspace.calculate_timing(product_id, calendar_days=20, decision_at=NOW)
+    assert single["prediction"]["requested_horizons"] == [plan["horizon"]]
+    assert single["prediction"]["execution_forecasts"]
+    assert {head["horizon"] for head in single["prediction"]["execution_forecasts"]} == {plan["horizon"]}
+
+
 def test_failed_refresh_never_masquerades_as_success_and_read_sees_actual_snapshot(
     context, monkeypatch
 ):
